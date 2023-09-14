@@ -11,5 +11,8 @@
     "url": "git@gitlab.presidio.com:stephentotten/student-management-mysql.git"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "mysql2": "^3.6.1"
+  }
 }

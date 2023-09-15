@@ -1,4 +1,4 @@
-const mysql = require('mysql');
+const mysql = require('mysql2');
 const readline = require('readline');
 const Student = require('./student');
 const studentList = [];
@@ -7,8 +7,14 @@ const dbConfig = {
   host: 'localhost',
   user: 'root',
   password: 'AngryCuddle5',
-  database: 'student_management', // Replace with your database name
-};
+  database: 'student_management_db'
+}
+
+async function askQuestion(rl, question) {
+    return new Promise((resolve) => {
+        rl.question(question, resolve);
+    });
+}
 
 const connection = mysql.createConnection(dbConfig);
 
@@ -48,8 +54,7 @@ async function promptUser() {
             // Add student
             const name = await askQuestion(rl, 'Enter student name: ');
             const age = parseInt(await askQuestion(rl, 'Enter student age: '));
-            const id = parseInt(await askQuestion(rl, 'Enter student id: '));
-            addStudent(name, age, id);
+            addStudent(name, age);
             rl.close();
             await promptUser();
             break;
@@ -67,8 +72,7 @@ async function promptUser() {
             const oldName = await askQuestion(rl, 'Enter student name to update: ');
             const newName = await askQuestion(rl, 'Enter new name: ');
             const newAge = parseInt(await askQuestion(rl, 'Enter new age: '));
-            const newId = parseInt(await askQuestion(rl, 'Enter new id: '));
-            updateStudent(studentList, oldName, newName, newAge, newId);
+            updateStudent(studentList, oldName, newName, newAge);
             rl.close();
             await promptUser();
             break;
@@ -114,10 +118,10 @@ async function promptUser() {
 
         case 6:
             // Exit and save to file
-            await saveStudentsToDatabase();
+            //await saveStudentsToDatabase();
             console.log('Exiting...');
             rl.close();
-            break;
+            process.exit();
 
         default:
             console.log('Invalid choice. Please try again.');
@@ -129,7 +133,8 @@ async function promptUser() {
 
 async function loadStudentsFromDatabase() {
   try {
-    const query = 'SELECT * FROM students';
+    studentList.length = 0; // Clear the existing studentList
+    const query = 'SELECT * FROM student';
     connection.query(query, (err, results) => {
       if (err) {
         console.error('Error loading students from database: ' + err.message);
@@ -145,26 +150,94 @@ async function loadStudentsFromDatabase() {
   }
 }
 
-function addStudent(name, age, id) {
-  const newStudent = new Student(name, age, id);
-  studentList.push(newStudent);
+function addStudent(name, age) {
+    const query = 'INSERT INTO student (name, age) VALUES (?, ?)';
+    connection.query(query, [name, age], (err, result) => {
+      if (err) {
+        console.error('Error adding student to database: ' + err.message);
+        return;
+      }
+  
+      const newStudent = new Student(name, age, result.insertId); // Capture the auto-generated ID
+  
+      // Only push the student into the array after a successful database insertion
+      studentList.push(newStudent);
+  
+      console.log('Student added to database with ID: ' + result.insertId);
+    });
+  }
+  
+  async function updateStudent(studentList, oldName, newName, newAge) {
+    const query = 'UPDATE student SET name = ?, age = ? WHERE name = ?';
+    connection.query(query, [newName, newAge, oldName], (err, result) => {
+      if (err) {
+        console.error('Error updating student in database: ' + err.message);
+        return;
+      }
+  
+      // Update the local studentList only if the database update succeeds
+      for (const student of studentList) {
+        if (student.name === oldName) {
+          student.name = newName;
+          student.age = newAge;
+          break;
+        }
+      }
+  
+      console.log('Student updated in database.');
+    });
+  }
+  
+  function deleteStudent(studentList, deleteName) {
+    const query = 'DELETE FROM student WHERE name = ?';
+    connection.query(query, [deleteName], (err, result) => {
+      if (err) {
+        console.error('Error deleting student from database: ' + err.message);
+        return;
+      }
+  
+      if (result.affectedRows === 0) {
+        console.log('Student not found');
+        return;
+      }
+  
+      // Update the local studentList only if the database delete operation succeeds
+      const updatedStudentList = studentList.filter(student => student.name !== deleteName);
+      studentList.length = 0; // Clear the existing studentList
+      Array.prototype.push.apply(studentList, updatedStudentList); // Copy the updated list back
+  
+      console.log('Student deleted from database.');
+    });
+  }
 
-  const query = 'INSERT INTO students (name, age, id) VALUES (?, ?, ?)';
-  connection.query(query, [name, age, id], (err) => {
-    if (err) {
-      console.error('Error adding student to database: ' + err.message);
-      return;
+function printStudents(studentList) {
+    for (const student of studentList) {
+        console.log(`Name: ${student.name} // Age: ${student.age} // ID: ${student.id}`);
     }
-    console.log('Student added to database');
-  });
 }
 
-// TODO: Add similar changes to other functions
+function searchStudentByID(studentList, id) {
+    const foundStudent = studentList.find(student => student.id === id);
+    if (foundStudent) {
+        console.log(`Student found: ${foundStudent.name} // Age: ${foundStudent.age}`);
+    } else {
+        console.log('Student not found');
+    }
+}
+
+function searchStudentByName(studentList, name) {
+    const foundStudent = studentList.find(student => student.name === name);
+    if (foundStudent) {
+        console.log(`Student found: ${foundStudent.name}, Age: ${foundStudent.age}, ID: ${foundStudent.id}`);
+    } else {
+        console.log('Student not found');
+    }
+}
 
 async function saveStudentsToDatabase() {
   try {
-    const values = studentList.map((student) => [student.name, student.age, student.id]);
-    const query = 'INSERT INTO students (name, age, id) VALUES ?';
+    const values = studentList.map((student) => [student.name, student.age]);
+    const query = 'INSERT INTO student (name, age) VALUES ?';
     connection.query(query, [values], (err) => {
       if (err) {
         console.error('Error saving students to database: ' + err.message);
